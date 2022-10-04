@@ -1,0 +1,326 @@
+import { ethers, waffle } from "hardhat";
+import { expect } from "chai";
+import { Signer, BigNumber } from "ethers";
+import type { FatToken, RewardDistributor } from "../typechain-types";
+import { routerAbi, routerAddress } from "../config/routerAbi";
+import hre from "hardhat";
+
+describe("FatTokenWithProxy test", async () => {
+  let owner: Signer;
+  let ownerAddress: string;
+  
+  let operator: Signer;
+  let operatorAddress: string;
+
+  let awardHolder: Signer;
+  let awardHolderAddress: string;
+
+  let shareholder: Signer;
+  let shareholderAddress: string;
+
+  let shareholder1: Signer;
+  let shareholderAddress1: string;
+
+  let fatToken: FatToken;
+  let rewardTokenAddress: string = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+
+  let router: any;
+
+  before(async () => {
+    [owner, operator, awardHolder, shareholder, shareholder1] = await ethers.getSigners();
+    ownerAddress = await owner.getAddress();
+    operatorAddress = await operator.getAddress();
+    awardHolderAddress = await awardHolder.getAddress();
+    shareholderAddress = await shareholder.getAddress();
+    shareholderAddress1 = await shareholder1.getAddress();
+
+    router = new ethers.Contract(
+      routerAddress,
+      routerAbi,
+      owner,
+    );
+  });
+
+  beforeEach(async () => {
+    await hre.network.provider.request({
+      method: "hardhat_reset",
+      params: [
+        {
+          forking: {
+            jsonRpcUrl: "https://eth-mainnet.alchemyapi.io/v2/dX1QRfJit2SeEg5lbvqzI0uJK0Qz87NC",
+            blockNumber: 14189520,
+          },
+        },
+      ],
+    });
+
+    const FatToken = await ethers.getContractFactory("FatToken");
+    fatToken = await FatToken.deploy(routerAddress, operatorAddress, rewardTokenAddress, awardHolderAddress);
+    await fatToken.deployed();
+
+    await fatToken.approve(routerAddress, ethers.utils.parseEther("5000000000"));
+    await router.addLiquidityETH(
+      fatToken.address,
+      ethers.utils.parseEther("10000000"),
+      0,
+      0,
+      ownerAddress, 
+      Date.now(),
+      {
+        from: ownerAddress,
+        value: ethers.utils.parseEther("0.1")
+      }
+    );
+  });
+
+  // it("should buy correctly", async () => {
+  //   await router.connect(shareholder).swapExactETHForTokensSupportingFeeOnTransferTokens(
+  //     0,
+  //     [rewardTokenAddress, fatToken.address],
+  //     shareholderAddress,
+  //     Date.now(),
+  //     {
+  //       value: ethers.utils.parseEther("0.01")
+  //     }
+  //   );
+  //   const tokenBalance = await fatToken.balanceOf(shareholderAddress);    
+  //   console.log(tokenBalance);
+  // });
+
+  it("should sell correctly", async () => {
+    await fatToken.transfer(shareholderAddress, ethers.utils.parseEther("100000"));
+    await fatToken.connect(shareholder).approve(routerAddress, ethers.utils.parseEther("100000"));
+    await router.connect(shareholder).swapExactTokensForETHSupportingFeeOnTransferTokens(
+      ethers.utils.parseEther("50000"),
+      0,
+      [fatToken.address, rewardTokenAddress],
+      shareholderAddress,
+      Date.now()
+    );
+    const tokenBalance = await fatToken.balanceOf(shareholderAddress);
+    expect(tokenBalance).to.equal(ethers.utils.parseEther("50000"));
+    const operationFee = await fatToken._operationFeeAmount();
+    const rewardFee = await fatToken._rewardFeeAmount();
+    const premiumRewardFee = await fatToken._premiumRewardFeeAmount();
+    const liquidityFee = await fatToken._liquidityFeeAmount();
+    console.log('Operation Fee: ', ethers.utils.formatEther(operationFee));
+    console.log('Reward Fee: ', ethers.utils.formatEther(rewardFee));
+    console.log('premiumRewardFee Fee: ', ethers.utils.formatEther(premiumRewardFee));
+    console.log('liquidityFee Fee: ', ethers.utils.formatEther(liquidityFee));
+    const a = await fatToken.a();
+    const b = await fatToken.b();
+    console.log('a: ', ethers.utils.formatEther(a));
+    console.log('b: ', ethers.utils.formatEther(b));
+    const reward = await fatToken.getTotalClaimed(shareholderAddress);
+    console.log('Claimable Reward: ', ethers.utils.formatEther(reward));
+  });
+
+  // it("should add fee when consecutive sells", async () => {
+  //   await fatToken.transfer(shareholderAddress, ethers.utils.parseEther("300"));
+  //   let sellCount = await fatToken._currentSellCount(shareholderAddress);
+  //   let lastSellTime = await fatToken._lastSellTime(shareholderAddress);
+    
+  //   await fatToken.connect(shareholder).approve(routerAddress, ethers.utils.parseEther("100000"));
+  //   await router.connect(shareholder).swapExactTokensForETHSupportingFeeOnTransferTokens(
+  //     ethers.utils.parseEther("100"),
+  //     0,
+  //     [fatToken.address, rewardTokenAddress],
+  //     shareholderAddress,
+  //     Date.now()
+  //   );
+    
+  //   sellCount = await fatToken._currentSellCount(shareholderAddress);
+  //   lastSellTime = await fatToken._lastSellTime(shareholderAddress);
+
+  //   await router.connect(shareholder).swapExactTokensForETHSupportingFeeOnTransferTokens(
+  //     ethers.utils.parseEther("100"),
+  //     0,
+  //     [fatToken.address, rewardTokenAddress],
+  //     shareholderAddress,
+  //     Date.now()
+  //   );
+  //   sellCount = await fatToken._currentSellCount(shareholderAddress);
+  //   lastSellTime = await fatToken._lastSellTime(shareholderAddress);
+  // });
+
+  
+
+  // it("should transfer correctly", async () => {
+  //   await fatToken.transfer(shareholderAddress, ethers.utils.parseEther("1000"));
+  //   await fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"));
+  //   const tokenBalance = await fatToken.balanceOf(shareholderAddress);
+  //   const tokenBalance1 = await fatToken.balanceOf(shareholderAddress1);
+  //   expect(tokenBalance).to.equal(ethers.utils.parseEther("900"));
+  //   expect(tokenBalance1).to.equal(ethers.utils.parseEther("97"));
+  // });
+
+  // it("should setTokenLocked correctly", async () => {
+  //   await fatToken.transfer(shareholderAddress, ethers.utils.parseEther("1000000"));
+  //   await fatToken.transfer(shareholderAddress1, ethers.utils.parseEther("1000000"));
+  //   await fatToken.connect(shareholder).setTokenLocked();
+    
+    
+  //   await router.connect(shareholder).swapETHForExactTokens(
+  //     ethers.utils.parseEther("100"),
+  //     [rewardTokenAddress, fatToken.address],
+  //     shareholderAddress,
+  //     Date.now(),
+  //     {
+  //       value: ethers.utils.parseEther("1")
+  //     }
+  //   );
+
+  
+  //   await fatToken.connect(shareholder1).approve(routerAddress, ethers.utils.parseEther("100000000"));
+  //   await router.connect(shareholder1).swapExactTokensForETHSupportingFeeOnTransferTokens(
+  //     ethers.utils.parseEther("1000"),
+  //     0,
+  //     [fatToken.address, rewardTokenAddress],
+  //     shareholderAddress1,
+  //     Date.now()
+  //   );
+    
+  //   await expect(
+  //     fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"))
+  //   ).to.be.revertedWith("FatToken: from is locked");
+  // });
+
+  // it("should claimRewards correctly", async () => {
+  //   await router.connect(shareholder).swapETHForExactTokens(
+  //     ethers.utils.parseEther("1000"),
+  //     [rewardTokenAddress, fatToken.address],
+  //     shareholderAddress,
+  //     Date.now(),
+  //     {
+  //       value: ethers.utils.parseEther("1")
+  //     }
+  //   );
+  //   await fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"));
+  //   await fatToken.connect(shareholder).claimRewards();
+  // });
+
+  // it("should setReinvest correctly", async () => {
+  //   await router.connect(shareholder).swapETHForExactTokens(
+  //     ethers.utils.parseEther("1000"),
+  //     [rewardTokenAddress, fatToken.address],
+  //     shareholderAddress,
+  //     Date.now(),
+  //     {
+  //       value: ethers.utils.parseEther("1")
+  //     }
+  //   );
+  //   await fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"));
+  //   await fatToken.connect(shareholder).setReinvest(true);
+  //   await fatToken.connect(shareholder).claimRewards();
+  // });
+
+  // only owner functions test
+  // it("should setDividendExempt correctly", async () => {
+  //   await fatToken.setDividendExempt(shareholderAddress);
+  //   await fatToken.transfer(shareholderAddress, ethers.utils.parseEther("100"));
+  //   await fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"));
+  //   const balance = await fatToken.balanceOf(shareholderAddress);
+  //   const balance1 = await fatToken.balanceOf(shareholderAddress1);
+  // });
+
+  // it("should unsetDividendExempt correctly", async () => {
+  //   await fatToken.setDividendExempt(shareholderAddress);
+  //   await fatToken.unsetDividendExempt(shareholderAddress);
+  // });
+
+  // it("should setBlacklisted correctly", async () => {
+  //   await fatToken.transfer(shareholderAddress, ethers.utils.parseEther("100"))
+  //   await fatToken.setBlacklisted(shareholderAddress);
+  //   await expect(
+  //     fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"))
+  //   ).to.be.revertedWith("FatToken: from is blacklisted");
+  // });
+
+  // it("should unsetBlacklisted correctly", async () => {
+  //   await fatToken.transfer(shareholderAddress, ethers.utils.parseEther("100"))
+  //   await fatToken.setBlacklisted(shareholderAddress);
+  //   await expect(
+  //     fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"))
+  //   ).to.be.revertedWith("FatToken: from is blacklisted");
+  //   await fatToken.unsetBlacklisted(shareholderAddress);
+  //   await fatToken.connect(shareholder).transfer(shareholderAddress1, ethers.utils.parseEther("100"));
+  // });
+
+  // it("should setTxLimitExempt correctly", async () => {
+  //   await fatToken.setTxLimitExempt(shareholderAddress, true);
+  //   await fatToken.setTxLimitExempt(shareholderAddress, false);
+  // });
+
+  // it("should setDistributorGas correctly", async () => {
+  //   await fatToken.setDistributorGas("500000");
+  // });
+
+  // it("should setBuyFees correctly", async () => {
+  //   await fatToken.setBuyFees(
+  //     {
+  //       "operationFee":"100", 
+  //       "rewardFee":"100", 
+  //       "premiumRewardFee":"100",
+  //       "liquidityFee": "100"
+  //     }
+  //   );
+  // });
+
+  // it("should setSellFees correctly", async () => {
+  //   await fatToken.setSellFees(
+  //     {
+  //       "operationFee":"100", 
+  //       "rewardFee":"100", 
+  //       "premiumRewardFee":"100",
+  //       "liquidityFee": "100"
+  //     }
+  //   );
+  // });
+
+  // it("should setTransferFees correctly", async () => {
+  //   await fatToken.setTransferFees(
+  //     {
+  //       "operationFee":"100", 
+  //       "rewardFee":"100", 
+  //       "premiumRewardFee":"100",
+  //       "liquidityFee": "100"
+  //     }
+  //   );
+  // });
+
+  // it("should setOperator correctly", async () => {
+  //   await fatToken.setOperator(operatorAddress);
+  // });
+
+  // it("should setRewardToken correctly", async () => {
+  //   await fatToken.setRewardToken(router.WETH());
+  // });
+
+  // it("should setAwardHolder correctly", async () => {
+  //   await fatToken.setAwardHolder(awardHolderAddress);
+  // });
+
+  // it("should setSellCooldown correctly", async () => {
+  //   await fatToken.setSellCooldown(4*24*60*60);
+  // });
+
+  // it("should setSwapEnabled correctly", async () => {
+  //   await fatToken.setSwapEnabled(false);
+  // });
+
+  // it("should setMaxWalletSize correctly", async () => {
+  //   await fatToken.setMaxTxSize("3000");
+  // });
+
+  // it("should setMaxTxSize correctly", async () => {
+  //   await fatToken.setMaxTxSize("3000");
+  // });
+
+  // it("should setSellTriggerLimit correctly", async () => {
+  //   await fatToken.setSellTriggerLimit("1000");
+  // });
+
+  // it("should setAdditionalFee correctly", async () => {
+  //   await fatToken.setAdditionalFee("3000");
+  // });
+});

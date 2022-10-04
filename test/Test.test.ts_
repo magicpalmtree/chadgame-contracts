@@ -1,0 +1,29 @@
+import { ethers, waffle } from "hardhat";
+import { expect } from "chai";
+import { Signer, BigNumber } from "ethers";
+import type { Test } from "../typechain-types";
+
+describe("Test", async () => {
+  // let owner: Signer;
+  // let ownerAddress: string;
+
+  let test: Test;
+  
+  // before(async () => {
+  //   [owner] = await ethers.getSigners();
+  //   ownerAddress = await owner.getAddress();
+  // });
+
+  beforeEach(async () => {
+    const Test = await ethers.getContractFactory("Test");
+    test = await Test.deploy();
+    await test.deployed();
+
+  });
+
+
+  it("test function", async () => {
+    let a = await test.randMod(12);
+    console.log('TIGER', a);
+  });
+});
