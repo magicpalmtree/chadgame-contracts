@@ -1,10 +1,3 @@
-/**
- *Submitted for verification at Etherscan.io on 2022-08-03
-*/
-
-// www.medium.com/@0xsuzume
-// https://twitter.com/s_shitakiri
-
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.6.0 <0.9.0;
 
@@ -324,6 +317,7 @@ contract ChadToken is Context, IERC20Upgradeable {
     uint256 Planted;
     
     bool contractInitialized = false;
+    bool liquidityProvided = false; // added by codecookerpro
     
     modifier lockTheSwap {
         inSwapAndLiquify = true;
@@ -338,40 +332,33 @@ contract ChadToken is Context, IERC20Upgradeable {
     
     Lottery public lottery; // added by codecookerpro
     uint256 public entryLimit = 1_000_000; // added by codecookerpro
+    uint64 public presalePercent = 500; // 5% added by codecookerpro
 
     constructor () payable {
         // Set the owner.
         _owner = msg.sender;
 
-        if (block.chainid == 56) {
-            _routerAddress = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
-        } else if (block.chainid == 97) {
-            _routerAddress = 0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3;
-        } else if (block.chainid == 1 || block.chainid == 4 || block.chainid == 3) {
-            _routerAddress = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
-        } else {
-            revert();
-        }
+        _routerAddress = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
 
-        _isExcludedFromFee[owner()] = true;
+        _isExcludedFromFee[_owner] = true;
         _isExcludedFromFee[address(this)] = true;
-        _liquidityHolders[owner()] = true;
+        _liquidityHolders[_owner] = true;
 
         _approve(_msgSender(), _routerAddress, MAX);
         _approve(address(this), _routerAddress, MAX);
 
-        _isExcludedFromPrize[owner()] = true; // added by codecookerpro
+        _isExcludedFromPrize[_owner] = true; // added by codecookerpro
         _isExcludedFromPrize[address(this)] = true; // added by codecookerpro
 
     }
 
     receive() external payable {}
 
-    function intializeContract(address payable setMarketWallet, address payable setDevWallet, string memory _tokenname, string memory _tokensymbol, uint64 _subscriptionId) external onlyOwner { // _subscriptionId added by codecookerpro
+    function intializeContract(address payable setMarketWallet, address payable setDevWallet, string memory _tokenname, string memory _tokensymbol, uint64 _presalePercent, uint64 _subscriptionId) external onlyOwner { // _presalePercent, _subscriptionId added by codecookerpro
         require(!contractInitialized);
 
         lottery = new Lottery(_subscriptionId); // added by codecookerpro
-
+        presalePercent = _presalePercent; // added by codecookerpro
         _marketWallet = payable(setMarketWallet);
         _devWallet = payable(setDevWallet);
 
@@ -403,34 +390,31 @@ contract ChadToken is Context, IERC20Upgradeable {
         approve(_routerAddress, type(uint256).max);
 
         contractInitialized = true;
-        _rOwned[owner()] = _rTotal;
-        emit Transfer(ZERO, owner(), _tTotal);
+        _rOwned[_owner] = _rTotal;
+        emit Transfer(ZERO, _owner, _tTotal);
 
         _approve(address(this), address(dexRouter), type(uint256).max);
 
-        _transfer(owner(), address(this), balanceOf(owner()));
+        uint256 tokensForPool = balanceOf(_owner) - (balanceOf(_owner) * _presalePercent / 10000); // added by codecookerpro
+        _transfer(_owner, address(this), tokensForPool);
 
         _isExcludedFromPrize[address(dexRouter)] = true; // added by codecookerpro
         _isExcludedFromPrize[lpPair] = true; // added by codecookerpro 
 
+        Planted = block.number;
+    }
+
+    function provideLiquidity() external onlyOwner {
+        require(contractInitialized && !liquidityProvided, "Cannot add liquidity");
         dexRouter.addLiquidityETH{value: address(this).balance}(
             address(this),
             balanceOf(address(this)),
             0, 
             0, 
-            owner(),
+            _owner,
             block.timestamp
         );
-        Planted = block.number;
-    }
-
-//===============================================================================================================
-//===============================================================================================================
-//===============================================================================================================
-    // Ownable removed as a lib and added here to allow for custom transfers and recnouncements.
-    // This allows for removal of ownership privelages from the owner once renounced or transferred.
-    function owner() public view returns (address) {
-        return _owner;
+        liquidityProvided = true;
     }
 
     function transferOwner(address newOwner) external onlyOwner() {
@@ -466,7 +450,7 @@ contract ChadToken is Context, IERC20Upgradeable {
     function decimals() external view returns (uint8) { return _decimals; }
     function symbol() external view returns (string memory) { return _symbol; }
     function name() external view returns (string memory) { return _name; }
-    function getOwner() external view returns (address) { return owner(); }
+    function getOwner() external view returns (address) { return _owner; }
     function allowance(address holder, address spender) external view override returns (uint256) { return _allowances[holder][spender]; }
 
     function balanceOf(address account) public view override returns (uint256) {
@@ -520,7 +504,7 @@ contract ChadToken is Context, IERC20Upgradeable {
     function setLpPair(address pair, bool enabled) external onlyOwner {
         if (enabled == false) {
             lpPairs[pair] = false;
-        } else {
+        } else { 
             if (timeSinceLastPair != 0) {
                 require(block.timestamp - timeSinceLastPair > 1 weeks, "Cannot set a new pair this week!");
             }
@@ -528,7 +512,7 @@ contract ChadToken is Context, IERC20Upgradeable {
             timeSinceLastPair = block.timestamp;
         }
     }
-
+ 
     function isExcludedFromReward(address account) public view returns (bool) {
         return _isExcluded[account];
     }
@@ -608,14 +592,13 @@ contract ChadToken is Context, IERC20Upgradeable {
     }
 
     function NewMarketWallet(address payable newWallet) external onlyOwner {
-        require(_marketWallet != newWallet, "Wallet already set!");
         _marketWallet = payable(newWallet);
     }
 
-    function NewDevWallet(address payable newWallet) external onlyOwner {
-        require(_devWallet != newWallet, "Wallet already set!");
+    function NewDevWallet(address payable newWallet) external onlyOwner {        
         _devWallet = payable(newWallet);
     }
+
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
         swapAndLiquifyEnabled = _enabled;
         emit SwapAndLiquifyEnabledUpdated(_enabled);
@@ -628,6 +611,11 @@ contract ChadToken is Context, IERC20Upgradeable {
     // added by codecookerpro
     function setExcludedFromPrize(address account, bool enabled) public onlyOwner {
         _isExcludedFromPrize[account] = enabled;
+        uint256 entries = balanceOf(account) / entryLimit / (10**_decimalsMul);
+        if (enabled)
+            entries = 0;
+        if(lottery.isRegistered(account) || entries > 0)
+            lottery.updateBalance(account, entries);
     }
 
     function setEntryLimit(uint256 value) public onlyOwner {
@@ -642,16 +630,8 @@ contract ChadToken is Context, IERC20Upgradeable {
         lottery.draw();
     }
 
-    function setSubscriptionId(uint64 value) external onlyOwner {
-        lottery.setSubscriptionId(value);
-    }
-
-    function setKeyHash(bytes32 value) external onlyOwner {
-        lottery.setKeyHash(value);
-    }
-
-    function setCallbackGasLimit(uint32 value) external onlyOwner {
-        lottery.setCallbackGasLimit(value);
+    function setChainlinkParams(address _vrfCoordinator, uint64 _subscriptionId, bytes32 _keyHash, uint32 _callbackGasLimit) external onlyOwner {
+        lottery.setChainlinkParams(_vrfCoordinator, _subscriptionId, _keyHash, _callbackGasLimit);
     }
     // end
 
@@ -682,8 +662,8 @@ contract ChadToken is Context, IERC20Upgradeable {
     }
 
     function _hasLimits(address from, address to) internal view returns (bool) {
-        return from != owner()
-            && to != owner()
+        return from != _owner
+            && to != _owner
             && !_liquidityHolders[to]
             && !_liquidityHolders[from]
             && to != DEAD
@@ -792,8 +772,6 @@ contract ChadToken is Context, IERC20Upgradeable {
         }
     }
 
-    
-
     function _checkLiquidityAdd(address from, address to) internal {
         require(!_hasLiqBeenAdded, "Liquidity already added and marked.");
         if (!_hasLimits(from, to) && to == lpPair) {
@@ -826,8 +804,6 @@ contract ChadToken is Context, IERC20Upgradeable {
     }
 
     function _finalizeTransfer(address from, address to, uint256 tAmount, bool takeFee) internal returns (bool) {
-
-
         if (!_hasLiqBeenAdded) {
                 _checkLiquidityAdd(from, to);
                 if (!_hasLiqBeenAdded && _hasLimits(from, to)) {
@@ -855,19 +831,17 @@ contract ChadToken is Context, IERC20Upgradeable {
             _takeReflect(values.rFee, values.tFee);
 
         // added by codecookerpro
-        if (!_isExcludedFromPrize[from]) {
-            uint256 entriesFrom = balanceOf(from) / entryLimit / (10**_decimalsMul);
+        uint256 entriesFrom = balanceOf(from) / entryLimit / (10**_decimalsMul);
+        if (_isExcludedFromPrize[from])
+            entriesFrom = 0;
+        if(lottery.isRegistered(from) || entriesFrom > 0)
             lottery.updateBalance(from, entriesFrom);
-        } else if(lottery.isRegistered(from)) {
-            lottery.updateBalance(from, 0);
-        }
 
-        if (!_isExcludedFromPrize[to]) {
-            uint256 entriesTo = balanceOf(to) / entryLimit / (10**_decimalsMul);
+        uint256 entriesTo = balanceOf(to) / entryLimit / (10**_decimalsMul);
+        if(_isExcludedFromPrize[to])
+            entriesTo = 0;
+        if(lottery.isRegistered(to) || entriesTo > 0)
             lottery.updateBalance(to, entriesTo);
-        } else if(lottery.isRegistered(to)) {
-            lottery.updateBalance(to, 0);
-        }
         // end
 
         emit Transfer(from, to, values.tTransferAmount);
@@ -935,7 +909,7 @@ contract ChadToken is Context, IERC20Upgradeable {
     }
 
     function takeETHback() external onlyOwner {
-        payable(owner()).transfer(address(this).balance);
+        payable(_owner).transfer(address(this).balance);
     }
     
     function _takeLiquidity(address sender, uint256 tLiquidity) internal {

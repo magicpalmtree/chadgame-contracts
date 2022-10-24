@@ -184,8 +184,8 @@ contract Lottery is VRFConsumerBaseV2 {
 
   // Your subscription ID.
   uint64 public s_subscriptionId;
-  address public vrfCoordinator = 0x6168499c0cFfCaCD319c818142124B7A15E857ab;
-  bytes32 public keyHash = 0xd89b2bf150e3b9e13446986e571fb9cab24b13cea0a43ea20a6049a85cc807cc;
+  address public vrfCoordinator = 0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D;
+  bytes32 public keyHash = 0x79d3d8832d904592c0bf9818b621522c988bb8b0c05cdc3b15aea1b6e8db0c15;
 
   uint32 public callbackGasLimit = 300000; 
   uint16 requestConfirmations = 3;
@@ -199,6 +199,10 @@ contract Lottery is VRFConsumerBaseV2 {
   event WinnerPrized(
     address indexed winner,
     uint256 ethReceived
+  );
+  event PrizeAdded(
+    address indexed sender,
+    uint256 ethAdded
   );
 
   constructor(uint64 subscriptionId) VRFConsumerBaseV2(vrfCoordinator) {
@@ -331,19 +335,16 @@ contract Lottery is VRFConsumerBaseV2 {
     prizeLimit = value;
   }
 
-  function setCallbackGasLimit(uint32 value) external onlyOwner {
-    callbackGasLimit = value;
+  function setChainlinkParams(address _vrfCoordinator, uint64 _subscriptionId, bytes32 _keyHash, uint32 _callbackGasLimit) external onlyOwner {
+    vrfCoordinator = _vrfCoordinator;
+    s_subscriptionId = _subscriptionId;
+    keyHash = _keyHash;
+    callbackGasLimit = _callbackGasLimit;
   }
 
-  function setSubscriptionId(uint64 value) external onlyOwner {
-    s_subscriptionId = value;
+  receive() external payable {
+     emit PrizeAdded(msg.sender, address(this).balance);
   }
-
-  function setKeyHash(bytes32 value) external onlyOwner {
-    keyHash = value;
-  }
-
-  receive() external payable {}
 
   modifier onlyOwner() {
     require(msg.sender == s_owner);
